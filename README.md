@@ -24,6 +24,10 @@ The **Chẩn đoán thiết bị** button calls the backend-only `listDeviceDeta
 
 The advisory AI pull-request reviewer is documented in [`docs/AI_CODE_REVIEW.md`](docs/AI_CODE_REVIEW.md). It reviews bounded GitHub diffs with OpenAI Structured Outputs, validates findings against changed lines, publishes COMMENT-only inline feedback, updates the stable PR summary, and sends a compact Teams Adaptive Card when configured. It does not execute pull-request source code or make merge decisions.
 
+## Pull request checks
+
+`.github/workflows/pr-review.yml` runs the TypeScript check, backend syntax check, Imou SDK asset checks, optional lint/tests, and the production build. It updates one status comment on same-repository pull requests. To receive the same result in Microsoft Teams, add an Actions secret named `TEAMS_WEBHOOK_URL`; the workflow skips the notification when the secret is not configured.
+
 ## Authentication and security
 Backend creates the **current documented** signature SHA256(secret) -> HMAC-SHA256 -> Base64 and calls `accessToken`, then `getKitToken` with permission type `1` (live-view only). It caches admin tokens and each kit token, returns only a short-lived kit token to the frontend, never AppSecret. The backend only serves two configured camera slots and binds to loopback. This sample has **no user auth**; never deploy publicly. KitToken is still a sensitive credential and must not be logged or stored. If making a public app, add HTTPS, user authentication and per-device authorization, CSRF/origin controls, token-rate limits and audit logs.
 
