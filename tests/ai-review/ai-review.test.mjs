@@ -211,6 +211,21 @@ test('OpenAI provider retries a transient rate limit without logging prompts', a
   assert.equal(calls, 2);
 });
 
+test('OpenRouter provider uses chat structured outputs', async () => {
+  let request;
+  const client = { chat: { completions: { create: async payload => {
+    request = payload;
+    return { choices: [{ message: { content: JSON.stringify({ summary: 'router ok', findings: [] }) } }] };
+  } } } };
+  const provider = new OpenAIProvider({ provider: 'openrouter', apiKey: 'router-key', model: 'openrouter/free', client });
+  const result = await provider.review({ system: 'system prompt', user: 'diff', maxOutputTokens: 12 });
+  assert.deepEqual(result, { summary: 'router ok', findings: [] });
+  assert.equal(request.model, 'openrouter/free');
+  assert.equal(request.max_tokens, 12);
+  assert.equal(request.response_format.type, 'json_schema');
+  assert.equal(request.response_format.json_schema.strict, true);
+});
+
 test('GitHub client retries transient API errors', async () => {
   const originalFetch = globalThis.fetch;
   let calls = 0;

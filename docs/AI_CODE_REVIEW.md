@@ -28,7 +28,7 @@ Never put any of these values in source, `.env.example`, PR text, comments, or l
 
 ## Review and reporting behavior
 
-The provider abstraction supports OpenAI and OpenRouter without changing GitHub publishing. Responses use Structured Outputs with a strict JSON schema when the selected model supports it. The validator sanitizes text, validates severity/category, requires a real changed file and added line, deduplicates findings, and caps inline comments.
+The provider abstraction supports OpenAI and OpenRouter without changing GitHub publishing. OpenAI uses Responses Structured Outputs; OpenRouter uses Chat Completions `response_format` JSON Schema. Both paths require a compatible model, and the validator still sanitizes text, validates severity/category, requires a real changed file and added line, deduplicates findings, and caps inline comments.
 
 The reviewer publishes only `COMMENT` reviews. It never approves, requests changes, merges, resolves human threads, or blocks a pull request because of an AI finding. A stable fingerprint prevents duplicate inline comments on reruns. Before publishing, it re-fetches the PR and abandons findings if the head SHA changed.
 
