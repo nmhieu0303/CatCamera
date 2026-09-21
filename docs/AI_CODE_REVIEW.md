@@ -56,3 +56,5 @@ To test the orchestration without an API call, test the diff, schema, report, an
 The reviewer sends only bounded diffs and small context windows, performs one model request per PR run, caps output at 3,500 tokens, and retries transient errors at most twice. Large or binary-heavy PRs can therefore receive a partial review. AI output is advisory and can be wrong; humans remain responsible for correctness and security decisions. The workflow does not prove camera playback works and does not inspect bundled Imou SDK files.
 
 If the configured provider key or model is missing, the AI result is explicitly shown as unavailable and the static CI result remains independent. If Teams is not configured, the notification is skipped without failing CI.
+
+See [AI_REVIEW_TEAMS.md](AI_REVIEW_TEAMS.md) for the card state matrix, safe payload examples, and Teams delivery troubleshooting.

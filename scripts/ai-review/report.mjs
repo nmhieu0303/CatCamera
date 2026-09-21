@@ -26,7 +26,7 @@ export function findingComment(finding) {
 export function buildSummaryBody({ pullRequest, ci = {}, ai = {}, runUrl }) {
   const counts = findingCounts(ai.findings || []);
   const coverage = ai.coverage || { filesChanged: 0, filesReviewed: 0, filesSkipped: 0, partial: true, skipped: [] };
-  const aiStatus = ai.status === 'completed' ? '✅ completed' : ai.status === 'unavailable' ? '⚪ unavailable' : ai.status === 'stale' ? '⚠️ stale — not published' : '❌ failed';
+  const aiStatus = ai.status === 'completed' && coverage.partial ? '⚠️ partial' : ai.status === 'completed' ? '✅ completed' : ai.status === 'unavailable' ? '⚪ unavailable' : ai.status === 'stale' ? '⚠️ stale — not published' : '❌ failed';
   const skipped = coverage.skipped?.length
     ? coverage.skipped.slice(0, 20).map(item => `  - \`${cleanText(item.file, 180)}\`: ${cleanText(item.reason, 120)}`).join('\n')
     : '  - None';
@@ -49,7 +49,9 @@ export function buildSummaryBody({ pullRequest, ci = {}, ai = {}, runUrl }) {
     '',
     `### AI review: ${aiStatus}`,
     ai.error ? `- **Error:** ${markdownText(ai.error, 500)}` : `- **Summary:** ${markdownText(ai.summary || 'No summary was returned.', 2000)}`,
-    `- **Findings:** critical ${counts.critical}, high ${counts.high}, medium ${counts.medium}, low ${counts.low}`,
+    ai.status === 'completed'
+      ? `- **Findings:** critical ${counts.critical}, high ${counts.high}, medium ${counts.medium}, low ${counts.low}`
+      : '- **Findings:** unavailable',
     `- **Inline comments:** ${ai.publishedFindings || 0} new; ${ai.duplicateFindings || 0} existing or rejected`,
     `- **Coverage:** ${coverage.filesReviewed}/${coverage.filesChanged} files reviewed; ${coverage.filesSkipped} skipped; ${coverage.partial ? 'partial' : 'complete'}`,
     '',

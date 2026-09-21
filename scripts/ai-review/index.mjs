@@ -9,6 +9,7 @@ import { buildSummaryBody, findingComment, SUMMARY_MARKER } from './report.mjs';
 import { buildTeamsAdaptiveCard, sendTeamsWebhook } from './teams.mjs';
 import { validateReview } from './schema.mjs';
 import { isStalePullRequest, isTrustedPullRequest } from './guards.mjs';
+import { summarizeCiJobs } from './ci.mjs';
 
 const json = async path => JSON.parse(await fs.readFile(path, 'utf8'));
 const env = process.env;
@@ -42,25 +43,23 @@ function repoParts() {
 function safeError(error) {
   return String(error?.message || error || 'unknown error')
     .replace(/https?:\/\/\S+/gi, '[url]')
-    .replace(/(?:sk|rk)-[A-Za-z0-9_-]+/g, '[secret]')
+    .replace(/(?:sk-or-v1-|sk-|rk-|AIza)[A-Za-z0-9_-]+/g, '[secret]')
     .slice(0, 500);
+}
+
+function diffStats(files = []) {
+  return files.reduce((stats, file) => ({
+    filesChanged: stats.filesChanged + 1,
+    additions: stats.additions + (Number(file.additions) || 0),
+    deletions: stats.deletions + (Number(file.deletions) || 0),
+  }), { filesChanged: 0, additions: 0, deletions: 0 });
 }
 
 async function getCiResults(client, owner, repo, event) {
   const runId = event.workflow_run?.id;
-  if (!runId) return { lint: 'not-run', types: 'not-run', backend: 'not-run', assets: 'not-run', tests: 'not-run', build: 'not-run' };
-  const jobs = await client.paginate(`/repos/${owner}/${repo}/actions/runs/${runId}/jobs`);
-  const source = jobs.find(job => job.name === 'Source checks');
-  const steps = new Map((source?.steps || []).map(step => [step.name, step.conclusion || 'not-run']));
-  const result = name => steps.get(name) || 'not-run';
-  return {
-    lint: result('ESLint (if configured)'),
-    types: result('TypeScript type check'),
-    backend: result('Backend syntax check'),
-    assets: result('Verify Imou SDK assets'),
-    tests: result('Tests (if configured)'),
-    build: result('Frontend and backend build'),
-  };
+  if (!runId) return summarizeCiJobs();
+  const response = await client.request(`/repos/${owner}/${repo}/actions/runs/${runId}/jobs?per_page=100&page=1`);
+  return summarizeCiJobs(Array.isArray(response) ? response : response?.jobs);
 }
 
 async function upsertSummary(client, owner, repo, pullRequest, body) {
@@ -136,14 +135,14 @@ async function main() {
   try {
     const files = await getPullRequestFiles(client, owner, repo, number);
     const review = collectReviewableFiles(files);
-    ai.coverage = review;
+    ai.coverage = { ...review, ...diffStats(files) };
     if (!review.reviewed.length) {
       ai = { ...ai, status: 'completed', summary: 'No reviewable source files were present in this pull request.' };
     } else {
       const providerConfig = resolveProviderConfig(env);
       if (!providerConfig.apiKey || !providerConfig.model) {
-        const keyName = providerConfig.provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'OPENAI_API_KEY';
-        const modelName = providerConfig.provider === 'openrouter' ? 'OPENROUTER_MODEL' : 'OPENAI_MODEL';
+        const keyName = providerConfig.provider === 'openrouter' ? 'OPENROUTER_API_KEY' : providerConfig.provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY';
+        const modelName = providerConfig.provider === 'openrouter' ? 'OPENROUTER_MODEL' : providerConfig.provider === 'gemini' ? 'GEMINI_MODEL' : 'OPENAI_MODEL';
         ai = { ...ai, status: 'unavailable', error: `${keyName} or ${modelName} is not configured.` };
       } else {
         const context = await retrieveBoundedContext(client, owner, repo, pullRequest.head.sha, review.reviewed);
@@ -178,8 +177,9 @@ async function main() {
     ciStatus: event.workflow_run?.conclusion || 'unknown',
     ai,
     workflowUrl: runUrl,
+    diffStats: ai.coverage,
   }));
-  console.log(JSON.stringify({ status: ai.status, filesReviewed: ai.coverage.filesReviewed, filesSkipped: ai.coverage.filesSkipped, findings: ai.findings?.length || 0, teamsSent: teams.sent, teamsStatus: teams.status || null }));
+  console.log(JSON.stringify({ status: ai.status, filesReviewed: ai.coverage.filesReviewed, filesSkipped: ai.coverage.filesSkipped, findings: ai.status === 'completed' ? (ai.findings?.length || 0) : null, teamsSent: teams.sent, teamsStatus: teams.status || null, teamsError: teams.error || null }));
 }
 
 main().catch(error => {
