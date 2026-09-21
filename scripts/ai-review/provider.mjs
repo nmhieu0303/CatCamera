@@ -36,12 +36,9 @@ export class OpenAIProvider {
             ],
             max_tokens: maxOutputTokens,
             response_format: {
-              type: 'json_schema',
-              json_schema: {
-                name: 'code_review',
-                strict: true,
-                schema: reviewResponseSchema,
-              },
+              // Free-router model support for strict json_schema varies. The
+              // prompt carries the schema and validateReview enforces it.
+              type: 'json_object',
             },
           });
           outputText = response.choices?.[0]?.message?.content;
