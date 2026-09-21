@@ -22,6 +22,12 @@ test('handles an added file', () => {
   assert.deepEqual([...parseUnifiedPatch('@@ -0,0 +1,2 @@\n+a\n+b\n')], [1, 2]);
 });
 
+test('preserves rename metadata while reviewing the new path', () => {
+  const result = collectReviewableFiles([{ filename: 'src/new.ts', previous_filename: 'src/old.ts', status: 'renamed', patch }]);
+  assert.equal(result.reviewed[0].previousFilename, 'src/old.ts');
+  assert.equal(result.reviewed[0].filename, 'src/new.ts');
+});
+
 test('handles a deleted file without inventing right-side lines', () => {
   assert.deepEqual([...parseUnifiedPatch('@@ -1,2 +0,0 @@\n-old\n-gone\n')], []);
 });
