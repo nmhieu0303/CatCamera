@@ -9,6 +9,7 @@ import { buildSummaryBody, findingComment, SUMMARY_MARKER } from './report.mjs';
 import { buildTeamsAdaptiveCard, sendTeamsWebhook } from './teams.mjs';
 import { validateReview } from './schema.mjs';
 import { isStalePullRequest, isTrustedPullRequest } from './guards.mjs';
+import { summarizeCiJobs } from './ci.mjs';
 
 const json = async path => JSON.parse(await fs.readFile(path, 'utf8'));
 const env = process.env;
@@ -56,19 +57,9 @@ function diffStats(files = []) {
 
 async function getCiResults(client, owner, repo, event) {
   const runId = event.workflow_run?.id;
-  if (!runId) return { lint: 'not-run', types: 'not-run', backend: 'not-run', assets: 'not-run', tests: 'not-run', build: 'not-run' };
-  const jobs = await client.paginate(`/repos/${owner}/${repo}/actions/runs/${runId}/jobs`);
-  const source = jobs.find(job => job.name === 'Source checks');
-  const steps = new Map((source?.steps || []).map(step => [step.name, step.conclusion || 'not-run']));
-  const result = name => steps.get(name) || 'not-run';
-  return {
-    lint: result('ESLint (if configured)'),
-    types: result('TypeScript type check'),
-    backend: result('Backend syntax check'),
-    assets: result('Verify Imou SDK assets'),
-    tests: result('Tests (if configured)'),
-    build: result('Frontend and backend build'),
-  };
+  if (!runId) return summarizeCiJobs();
+  const response = await client.request(`/repos/${owner}/${repo}/actions/runs/${runId}/jobs?per_page=100&page=1`);
+  return summarizeCiJobs(Array.isArray(response) ? response : response?.jobs);
 }
 
 async function upsertSummary(client, owner, repo, pullRequest, body) {

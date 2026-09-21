@@ -7,8 +7,24 @@ import { buildTeamsAdaptiveCard, sendTeamsWebhook } from '../../scripts/ai-revie
 import { GeminiProvider, OpenAIProvider, resolveProviderConfig } from '../../scripts/ai-review/provider.mjs';
 import { createGitHubClient } from '../../scripts/ai-review/github.mjs';
 import { isStalePullRequest, isTrustedPullRequest } from '../../scripts/ai-review/guards.mjs';
+import { summarizeCiJobs } from '../../scripts/ai-review/ci.mjs';
 
 const patch = '@@ -1,3 +1,4 @@\n line one\n-line two\n+line two fixed\n+line three\n line four\n';
+
+test('maps static workflow jobs and marks absent optional checks as not configured', () => {
+  assert.deepEqual(summarizeCiJobs([{ name: 'Source checks', steps: [
+    { name: 'ESLint (if configured)', conclusion: 'skipped' },
+    { name: 'TypeScript type check', conclusion: 'success' },
+    { name: 'Backend syntax check', conclusion: 'success' },
+    { name: 'Verify Imou SDK assets', conclusion: 'success' },
+    { name: 'Tests (if configured)', conclusion: 'skipped' },
+    { name: 'Frontend and backend build', conclusion: 'success' },
+  ] }]), { lint: 'not-configured', types: 'success', backend: 'success', assets: 'success', tests: 'not-configured', build: 'success' });
+});
+
+test('does not claim checks ran when the source job is unavailable', () => {
+  assert.deepEqual(summarizeCiJobs([]), { lint: 'not-run', types: 'not-run', backend: 'not-run', assets: 'not-run', tests: 'not-run', build: 'not-run' });
+});
 
 test('maps added lines in a unified patch', () => {
   assert.deepEqual([...parseUnifiedPatch(patch)], [2, 3]);
