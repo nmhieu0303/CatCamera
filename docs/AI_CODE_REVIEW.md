@@ -4,7 +4,7 @@ CatCamera uses two workflows. `PR Review` runs on each pull request and executes
 
 ## What is reviewed
 
-The reviewer paginates all changed files, then applies bounded limits before sending anything to OpenAI:
+The reviewer paginates all changed files, then applies bounded limits before sending anything to the configured AI provider:
 
 - `AI_MAX_FILES` defaults to 100 files.
 - `AI_MAX_PATCH_CHARS` defaults to 12,000 characters per file.
@@ -19,15 +19,16 @@ Only added right-side lines can receive inline comments. Findings are rejected w
 Add these values in the repository settings:
 
 1. Open **Settings → Secrets and variables → Actions**.
-2. Add `OPENAI_API_KEY` as an Actions secret. The ChatGPT subscription does not provide API billing or API access automatically.
-3. Add `TEAMS_WEBHOOK_URL` as an Actions secret for the Teams Workflows webhook.
-4. Add `OPENAI_MODEL` as a repository variable (or secret) using a model ID enabled for the organization. The workflow intentionally does not invent a model default.
+2. For OpenRouter Free, add `OPENROUTER_API_KEY` as an Actions secret and `OPENROUTER_MODEL` as a repository variable. Use `openrouter/free` or a specific model marked `:free`; choose one that supports Structured Outputs. OpenRouter's free capacity and rate limits can change.
+3. Set the optional `AI_PROVIDER` repository variable to `openrouter` (the workflow defaults to it). `OPENROUTER_BASE_URL` is fixed to `https://openrouter.ai/api/v1` in the workflow.
+4. To use OpenAI API instead, set `AI_PROVIDER=openai`, add `OPENAI_API_KEY`, and add `OPENAI_MODEL`.
+5. Add `TEAMS_WEBHOOK_URL` as an Actions secret for the Teams Workflows webhook.
 
-Never put any of these values in source, `.env.example`, PR text, comments, or logs. The OpenAI SDK request uses `store: false`, a bounded output size, a timeout, and retries only for transient failures and rate limits.
+Never put any of these values in source, `.env.example`, PR text, comments, or logs. The OpenAI SDK request uses `store: false`, a bounded output size, a timeout, and retries only for transient failures and rate limits. OpenRouter is an external routing service, so review its provider and privacy settings before sending proprietary code.
 
 ## Review and reporting behavior
 
-The provider abstraction currently contains an OpenAI implementation and can accept another provider without changing GitHub publishing. Responses use OpenAI Structured Outputs with a strict JSON schema. The validator sanitizes text, validates severity/category, requires a real changed file and added line, deduplicates findings, and caps inline comments.
+The provider abstraction supports OpenAI and OpenRouter without changing GitHub publishing. Responses use Structured Outputs with a strict JSON schema when the selected model supports it. The validator sanitizes text, validates severity/category, requires a real changed file and added line, deduplicates findings, and caps inline comments.
 
 The reviewer publishes only `COMMENT` reviews. It never approves, requests changes, merges, resolves human threads, or blocks a pull request because of an AI finding. A stable fingerprint prevents duplicate inline comments on reruns. Before publishing, it re-fetches the PR and abandons findings if the head SHA changed.
 
@@ -35,7 +36,7 @@ The summary comment uses `<!-- catcamera-pr-review -->`, so the static and AI wo
 
 ## Security model
 
-Fork pull requests do not satisfy the AI workflow's same-repository guard and cannot receive `OPENAI_API_KEY` or `TEAMS_WEBHOOK_URL`. The static workflow runs with read-only contents permission. The AI workflow uses a write token only for PR comments and checks the repository, PR state, and head SHA before publishing. PR descriptions, comments, diffs, and source text are untrusted input; prompt-injection text is treated as data.
+Fork pull requests do not satisfy the AI workflow's same-repository guard and cannot receive provider keys or `TEAMS_WEBHOOK_URL`. The static workflow runs with read-only contents permission. The AI workflow uses a write token only for PR comments and checks the repository, PR state, and head SHA before publishing. PR descriptions, comments, diffs, and source text are untrusted input; prompt-injection text is treated as data.
 
 ## Local testing
 
@@ -53,4 +54,4 @@ To test the orchestration without an API call, test the diff, schema, report, an
 
 The reviewer sends only bounded diffs and small context windows, performs one model request per PR run, caps output at 3,500 tokens, and retries transient errors at most twice. Large or binary-heavy PRs can therefore receive a partial review. AI output is advisory and can be wrong; humans remain responsible for correctness and security decisions. The workflow does not prove camera playback works and does not inspect bundled Imou SDK files.
 
-If `OPENAI_API_KEY` or `OPENAI_MODEL` is missing, the AI result is explicitly shown as unavailable and the static CI result remains independent. If Teams is not configured, the notification is skipped without failing CI.
+If the configured provider key or model is missing, the AI result is explicitly shown as unavailable and the static CI result remains independent. If Teams is not configured, the notification is skipped without failing CI.

@@ -22,7 +22,7 @@ The browser SDK uses the configured `IMOU_REGION` to proxy its documented `getBu
 
 The **Chẩn đoán thiết bị** button calls the backend-only `listDeviceDetailsByIds` diagnostic for a configured camera slot. It returns only model, online status, capability strings, channel status, and the documented encryption mode; it never returns the serial number, device password, access token, kitToken, or vendor response. The official API describes `encryptMode=0` as device-default encryption and `encryptMode=1` as user-defined encryption. For this SDK version, an empty `code` follows the official demo's default path; do not force the serial number into the field when the camera has no configured password or custom key.
 
-The advisory AI pull-request reviewer is documented in [`docs/AI_CODE_REVIEW.md`](docs/AI_CODE_REVIEW.md). It reviews bounded GitHub diffs with OpenAI Structured Outputs, validates findings against changed lines, publishes COMMENT-only inline feedback, updates the stable PR summary, and sends a compact Teams Adaptive Card when configured. It does not execute pull-request source code or make merge decisions.
+The advisory AI pull-request reviewer is documented in [`docs/AI_CODE_REVIEW.md`](docs/AI_CODE_REVIEW.md). It reviews bounded GitHub diffs with Structured Outputs through the configured OpenAI or OpenRouter provider, validates findings against changed lines, publishes COMMENT-only inline feedback, updates the stable PR summary, and sends a compact Teams Adaptive Card when configured. It does not execute pull-request source code or make merge decisions.
 
 ## Pull request checks
 

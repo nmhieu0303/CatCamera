@@ -4,7 +4,7 @@ import { parseUnifiedPatch, collectReviewableFiles, changedLinesMap } from '../.
 import { validateReview, findingFingerprint } from '../../scripts/ai-review/schema.mjs';
 import { buildSummaryBody, findingComment } from '../../scripts/ai-review/report.mjs';
 import { buildTeamsAdaptiveCard, sendTeamsWebhook } from '../../scripts/ai-review/teams.mjs';
-import { OpenAIProvider } from '../../scripts/ai-review/provider.mjs';
+import { OpenAIProvider, resolveProviderConfig } from '../../scripts/ai-review/provider.mjs';
 import { createGitHubClient } from '../../scripts/ai-review/github.mjs';
 import { isStalePullRequest, isTrustedPullRequest } from '../../scripts/ai-review/guards.mjs';
 
@@ -169,6 +169,33 @@ test('stale head SHA prevents publication', () => {
 test('missing OpenAI configuration fails explicitly', () => {
   assert.throws(() => new OpenAIProvider({ model: 'configured-but-no-key' }), /OPENAI_API_KEY/);
   assert.throws(() => new OpenAIProvider({ apiKey: 'test-key' }), /OPENAI_MODEL/);
+});
+
+test('resolves OpenRouter configuration without exposing credentials', () => {
+  const config = resolveProviderConfig({
+    AI_PROVIDER: 'openrouter',
+    OPENROUTER_API_KEY: 'router-secret',
+    OPENROUTER_MODEL: 'openrouter/free',
+    OPENROUTER_SITE_URL: 'https://github.com/example/repo',
+    OPENROUTER_SITE_NAME: 'CatCamera AI Review',
+  });
+  assert.deepEqual(config, {
+    provider: 'openrouter',
+    apiKey: 'router-secret',
+    model: 'openrouter/free',
+    baseURL: 'https://openrouter.ai/api/v1',
+    defaultHeaders: {
+      'HTTP-Referer': 'https://github.com/example/repo',
+      'X-OpenRouter-Title': 'CatCamera AI Review',
+    },
+  });
+  const isolated = resolveProviderConfig({ AI_PROVIDER: 'openrouter', OPENAI_API_KEY: 'must-not-cross-provider', OPENAI_MODEL: 'must-not-cross-provider' });
+  assert.equal(isolated.apiKey, undefined);
+  assert.equal(isolated.model, undefined);
+});
+
+test('rejects unsupported AI providers', () => {
+  assert.throws(() => resolveProviderConfig({ AI_PROVIDER: 'unknown' }), /Unsupported AI_PROVIDER/);
 });
 
 test('OpenAI provider retries a transient rate limit without logging prompts', async () => {

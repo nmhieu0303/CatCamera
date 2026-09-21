@@ -53,8 +53,15 @@ jobs:
       - name: Run advisory AI review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AI_PROVIDER: ${{ vars.AI_PROVIDER || 'openrouter' }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || secrets.OPENROUTER_MODEL }}
+          OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
+          OPENROUTER_SITE_URL: https://github.com/${{ github.repository }}
+          OPENROUTER_SITE_NAME: CatCamera AI Review
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_MODEL: ${{ vars.OPENAI_MODEL || secrets.OPENAI_MODEL }}
+          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL }}
           TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
           PR_NUMBER: ${{ inputs.pr_number }}
         run: node scripts/ai-review/index.mjs

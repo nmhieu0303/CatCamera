@@ -4,7 +4,7 @@ import { createGitHubClient, getPullRequestContext, getPullRequestFiles } from '
 import { collectReviewableFiles, changedLinesMap } from './diff.mjs';
 import { retrieveBoundedContext } from './context.mjs';
 import { buildReviewPrompt, SYSTEM_PROMPT } from './prompt.mjs';
-import { createProvider } from './provider.mjs';
+import { createProvider, resolveProviderConfig } from './provider.mjs';
 import { buildSummaryBody, findingComment, SUMMARY_MARKER } from './report.mjs';
 import { buildTeamsAdaptiveCard, sendTeamsWebhook } from './teams.mjs';
 import { validateReview } from './schema.mjs';
@@ -118,24 +118,29 @@ async function main() {
 
   const ci = await getCiResults(client, owner, repo, event);
   const runUrl = event.workflow_run?.html_url || `${env.GITHUB_SERVER_URL || 'https://github.com'}/${owner}/${repo}/actions/runs/${env.GITHUB_RUN_ID}`;
-  let ai = { status: 'unavailable', summary: 'OpenAI review is not configured.', findings: [], coverage: { filesChanged: 0, filesReviewed: 0, filesSkipped: 0, partial: true, skipped: [] } };
+  let ai = { status: 'unavailable', summary: 'AI review is not configured.', findings: [], coverage: { filesChanged: 0, filesReviewed: 0, filesSkipped: 0, partial: true, skipped: [] } };
   try {
     const files = await getPullRequestFiles(client, owner, repo, number);
     const review = collectReviewableFiles(files);
     ai.coverage = review;
     if (!review.reviewed.length) {
       ai = { ...ai, status: 'completed', summary: 'No reviewable source files were present in this pull request.' };
-    } else if (!env.OPENAI_API_KEY || !env.OPENAI_MODEL) {
-      ai = { ...ai, status: 'unavailable', error: 'OPENAI_API_KEY or OPENAI_MODEL is not configured.' };
     } else {
-      const context = await retrieveBoundedContext(client, owner, repo, pullRequest.head.sha, review.reviewed);
-      const provider = createProvider(env);
-      const raw = await provider.review({ system: SYSTEM_PROMPT, user: buildReviewPrompt({ pullRequest, review, context }) });
-      const validated = validateReview(raw, { reviewableFiles: new Set(review.reviewed.map(item => item.filename)), changedLinesByFile: changedLinesMap(review) });
-      if (!validated.ok) {
-        ai = { ...ai, status: 'failed', error: validated.error };
+      const providerConfig = resolveProviderConfig(env);
+      if (!providerConfig.apiKey || !providerConfig.model) {
+        const keyName = providerConfig.provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'OPENAI_API_KEY';
+        const modelName = providerConfig.provider === 'openrouter' ? 'OPENROUTER_MODEL' : 'OPENAI_MODEL';
+        ai = { ...ai, status: 'unavailable', error: `${keyName} or ${modelName} is not configured.` };
       } else {
-        ai = { ...ai, status: 'completed', summary: validated.summary, findings: validated.findings, rejectedFindings: validated.rejected };
+        const context = await retrieveBoundedContext(client, owner, repo, pullRequest.head.sha, review.reviewed);
+        const provider = createProvider(env);
+        const raw = await provider.review({ system: SYSTEM_PROMPT, user: buildReviewPrompt({ pullRequest, review, context }) });
+        const validated = validateReview(raw, { reviewableFiles: new Set(review.reviewed.map(item => item.filename)), changedLinesByFile: changedLinesMap(review) });
+        if (!validated.ok) {
+          ai = { ...ai, status: 'failed', error: validated.error };
+        } else {
+          ai = { ...ai, status: 'completed', summary: validated.summary, findings: validated.findings, rejectedFindings: validated.rejected };
+        }
       }
     }
   } catch (error) {
