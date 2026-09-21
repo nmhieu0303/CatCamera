@@ -1,5 +1,6 @@
 const MAX_FILES = 8;
 const MAX_LINES_PER_FILE = 120;
+const MAX_CONTEXT_CHARS = 24000;
 
 function decodeContent(data) {
   if (!data || data.encoding !== 'base64' || typeof data.content !== 'string') return null;
@@ -8,6 +9,7 @@ function decodeContent(data) {
 
 export async function retrieveBoundedContext(client, owner, repo, sha, reviewedFiles) {
   const context = [];
+  let totalChars = 0;
   for (const file of reviewedFiles.slice(0, MAX_FILES)) {
     if (file.status === 'removed') continue;
     try {
@@ -20,7 +22,12 @@ export async function retrieveBoundedContext(client, owner, repo, sha, reviewedF
         for (let line = Math.max(1, changed - 15); line <= Math.min(lines.length, changed + 15); line += 1) selected.add(line);
       }
       const ordered = [...selected].sort((a, b) => a - b).slice(0, MAX_LINES_PER_FILE);
-      context.push({ file: file.filename, lines: ordered.map(line => `${line}: ${lines[line - 1]}`).join('\n') });
+      const boundedLines = ordered.map(line => `${line}: ${lines[line - 1]}`).join('\n').slice(0, Math.max(0, MAX_CONTEXT_CHARS - totalChars));
+      if (boundedLines) {
+        context.push({ file: file.filename, lines: boundedLines });
+        totalChars += boundedLines.length;
+      }
+      if (totalChars >= MAX_CONTEXT_CHARS) break;
     } catch {
       // Context is optional. The patch remains the source of truth.
     }

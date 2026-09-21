@@ -50,6 +50,7 @@ export function buildSummaryBody({ pullRequest, ci = {}, ai = {}, runUrl }) {
     `### AI review: ${aiStatus}`,
     ai.error ? `- **Error:** ${markdownText(ai.error, 500)}` : `- **Summary:** ${markdownText(ai.summary || 'No summary was returned.', 2000)}`,
     `- **Findings:** critical ${counts.critical}, high ${counts.high}, medium ${counts.medium}, low ${counts.low}`,
+    `- **Inline comments:** ${ai.publishedFindings || 0} new; ${ai.duplicateFindings || 0} existing or rejected`,
     `- **Coverage:** ${coverage.filesReviewed}/${coverage.filesChanged} files reviewed; ${coverage.filesSkipped} skipped; ${coverage.partial ? 'partial' : 'complete'}`,
     '',
     '### Skipped files',
