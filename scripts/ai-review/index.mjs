@@ -19,6 +19,20 @@ function eventPullRequestNumber(event) {
   return Number(event.workflow_run?.pull_requests?.[0]?.number || 0);
 }
 
+async function resolvePullRequestNumber(client, owner, repo, event) {
+  const direct = eventPullRequestNumber(event);
+  if (direct) return direct;
+  const sha = event.workflow_run?.head_sha;
+  if (!sha) return 0;
+  const pullRequests = await client.paginate(`/repos/${owner}/${repo}/commits/${sha}/pulls`);
+  const repository = `${owner}/${repo}`;
+  const matching = pullRequests.find(pullRequest =>
+    pullRequest.base?.repo?.full_name === repository &&
+    pullRequest.head?.sha === sha
+  );
+  return Number(matching?.number || 0);
+}
+
 function repoParts() {
   const [owner, repo] = String(env.GITHUB_REPOSITORY || '').split('/');
   if (!owner || !repo) throw new Error('GITHUB_REPOSITORY is required');
@@ -103,9 +117,9 @@ async function publishInlineComments(client, owner, repo, pullRequest, findings)
 async function main() {
   const event = await json(env.GITHUB_EVENT_PATH || '/dev/null');
   const { owner, repo } = repoParts();
-  const number = eventPullRequestNumber(event);
-  if (!number) throw new Error('Could not determine pull request number');
   const client = createGitHubClient({ token: env.GITHUB_TOKEN });
+  const number = await resolvePullRequestNumber(client, owner, repo, event);
+  if (!number) throw new Error('Could not determine pull request number');
   let pullRequest = await getPullRequestContext(client, owner, repo, number);
   if (!isTrustedPullRequest(pullRequest, `${owner}/${repo}`) || pullRequest.state !== 'open') {
     console.log(`AI review skipped: pull request #${number} is not open in this repository.`);
