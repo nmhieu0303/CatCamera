@@ -67,7 +67,12 @@ export class OpenAIProvider {
       } catch (error) {
         const status = Number(error?.status || error?.code);
         const retryable = status === 408 || status === 409 || status === 429 || status >= 500 || error?.name === 'APIConnectionTimeoutError';
-        const reason = String(error?.name || error?.code || 'request error').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 80) || 'request-error';
+        const safeMessage = String(error?.message || '')
+          .replace(/https?:\/\/\S+/gi, '[url]')
+          .replace(/(?:sk|rk|sk-or-v1)-[A-Za-z0-9_-]+/g, '[secret]')
+          .replace(/[\r\n]+/g, ' ')
+          .slice(0, 160);
+        const reason = `${String(error?.name || error?.code || 'request-error').replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 80) || 'request-error'}${safeMessage ? `: ${safeMessage}` : ''}`;
         if (!retryable || attempt >= this.maxRetries) throw new Error(`${this.provider} review failed (${status || reason})`);
         const retryAfter = Number(error?.headers?.get?.('retry-after'));
         await this.sleep(Number.isFinite(retryAfter) ? retryAfter * 1000 : 750 * (2 ** attempt));
