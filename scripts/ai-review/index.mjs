@@ -42,8 +42,16 @@ function repoParts() {
 function safeError(error) {
   return String(error?.message || error || 'unknown error')
     .replace(/https?:\/\/\S+/gi, '[url]')
-    .replace(/(?:sk|rk)-[A-Za-z0-9_-]+/g, '[secret]')
+    .replace(/(?:sk-or-v1-|sk-|rk-|AIza)[A-Za-z0-9_-]+/g, '[secret]')
     .slice(0, 500);
+}
+
+function diffStats(files = []) {
+  return files.reduce((stats, file) => ({
+    filesChanged: stats.filesChanged + 1,
+    additions: stats.additions + (Number(file.additions) || 0),
+    deletions: stats.deletions + (Number(file.deletions) || 0),
+  }), { filesChanged: 0, additions: 0, deletions: 0 });
 }
 
 async function getCiResults(client, owner, repo, event) {
@@ -136,14 +144,14 @@ async function main() {
   try {
     const files = await getPullRequestFiles(client, owner, repo, number);
     const review = collectReviewableFiles(files);
-    ai.coverage = review;
+    ai.coverage = { ...review, ...diffStats(files) };
     if (!review.reviewed.length) {
       ai = { ...ai, status: 'completed', summary: 'No reviewable source files were present in this pull request.' };
     } else {
       const providerConfig = resolveProviderConfig(env);
       if (!providerConfig.apiKey || !providerConfig.model) {
-        const keyName = providerConfig.provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'OPENAI_API_KEY';
-        const modelName = providerConfig.provider === 'openrouter' ? 'OPENROUTER_MODEL' : 'OPENAI_MODEL';
+        const keyName = providerConfig.provider === 'openrouter' ? 'OPENROUTER_API_KEY' : providerConfig.provider === 'gemini' ? 'GEMINI_API_KEY' : 'OPENAI_API_KEY';
+        const modelName = providerConfig.provider === 'openrouter' ? 'OPENROUTER_MODEL' : providerConfig.provider === 'gemini' ? 'GEMINI_MODEL' : 'OPENAI_MODEL';
         ai = { ...ai, status: 'unavailable', error: `${keyName} or ${modelName} is not configured.` };
       } else {
         const context = await retrieveBoundedContext(client, owner, repo, pullRequest.head.sha, review.reviewed);
@@ -178,8 +186,9 @@ async function main() {
     ciStatus: event.workflow_run?.conclusion || 'unknown',
     ai,
     workflowUrl: runUrl,
+    diffStats: ai.coverage,
   }));
-  console.log(JSON.stringify({ status: ai.status, filesReviewed: ai.coverage.filesReviewed, filesSkipped: ai.coverage.filesSkipped, findings: ai.findings?.length || 0, teamsSent: teams.sent, teamsStatus: teams.status || null }));
+  console.log(JSON.stringify({ status: ai.status, filesReviewed: ai.coverage.filesReviewed, filesSkipped: ai.coverage.filesSkipped, findings: ai.status === 'completed' ? (ai.findings?.length || 0) : null, teamsSent: teams.sent, teamsStatus: teams.status || null, teamsError: teams.error || null }));
 }
 
 main().catch(error => {

@@ -284,7 +284,9 @@ test('Teams notification reports webhook failure without throwing', async () => 
   globalThis.fetch = async () => new Response('', { status: 400 });
   try {
     const result = await sendTeamsWebhook('https://example.invalid/webhook', {}, { retries: 0 });
-    assert.deepEqual(result, { sent: false, status: 400 });
+    assert.equal(result.sent, false);
+    assert.equal(result.status, 400);
+    assert.match(result.error, /HTTP 400/);
   } finally {
     globalThis.fetch = originalFetch;
   }
