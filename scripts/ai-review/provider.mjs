@@ -4,7 +4,7 @@ import { reviewResponseSchema } from './schema.mjs';
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 export class OpenAIProvider {
-  constructor({ apiKey, model, provider = 'openai', baseURL, defaultHeaders, timeoutMs = 45000, maxRetries = 2, client, sleepFn = sleep } = {}) {
+  constructor({ apiKey, model, provider = 'openai', baseURL, defaultHeaders, timeoutMs = 90000, maxRetries = 2, client, sleepFn = sleep } = {}) {
     const keyName = provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'OPENAI_API_KEY';
     const modelName = provider === 'openrouter' ? 'OPENROUTER_MODEL' : 'OPENAI_MODEL';
     if (!apiKey) throw new Error(`${keyName} is not configured`);
