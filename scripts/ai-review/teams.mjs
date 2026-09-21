@@ -1,4 +1,4 @@
-import { cleanText, findingFingerprint } from './schema.mjs';
+import { cleanText } from './schema.mjs';
 import { findingCounts } from './report.mjs';
 
 export function buildTeamsAdaptiveCard({ repository, pullRequest, ciStatus, ai, workflowUrl }) {
