@@ -28,20 +28,27 @@ export class OpenAIProvider {
       try {
         let outputText;
         if (this.provider === 'openrouter') {
-          const response = await this.client.chat.completions.create({
+          const request = {
             model: this.model,
             messages: [
               { role: 'system', content: system },
               { role: 'user', content: user },
             ],
             max_tokens: maxOutputTokens,
-            response_format: {
-              // Free-router model support for strict json_schema varies. The
-              // prompt carries the schema and validateReview enforces it.
-              type: 'json_object',
-            },
-          });
+            // Free-router model support for strict json_schema varies. The
+            // prompt carries the schema and validateReview enforces it.
+            response_format: { type: 'json_object' },
+          };
+          let response = await this.client.chat.completions.create(request);
           outputText = response.choices?.[0]?.message?.content;
+          // Some free models acknowledge JSON mode but return an empty content
+          // field. Retry once without the optional response_format so the
+          // schema instruction in the prompt can still be validated locally.
+          if (!outputText) {
+            const { response_format: _responseFormat, ...plainRequest } = request;
+            response = await this.client.chat.completions.create(plainRequest);
+            outputText = response.choices?.[0]?.message?.content;
+          }
         } else {
           const response = await this.client.responses.create({
             model: this.model,
@@ -63,7 +70,8 @@ export class OpenAIProvider {
           outputText = response.output_text;
         }
         if (!outputText) throw new Error(`${this.provider} returned an empty response`);
-        return JSON.parse(outputText);
+        const jsonText = String(outputText).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        return JSON.parse(jsonText);
       } catch (error) {
         const status = Number(error?.status || error?.code);
         const retryable = status === 408 || status === 409 || status === 429 || status >= 500 || error?.name === 'APIConnectionTimeoutError';
