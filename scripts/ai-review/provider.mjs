@@ -71,7 +71,17 @@ export class OpenAIProvider {
         }
         if (!outputText) throw new Error(`${this.provider} returned an empty response`);
         const jsonText = String(outputText).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-        return JSON.parse(jsonText);
+        try {
+          return JSON.parse(jsonText);
+        } catch (parseError) {
+          // Some free models prepend a safety label or other non-JSON text.
+          // Recover only a complete top-level object; schema validation still
+          // rejects malformed or unsafe findings before publication.
+          const start = jsonText.indexOf('{');
+          const end = jsonText.lastIndexOf('}');
+          if (start < 0 || end <= start) throw parseError;
+          return JSON.parse(jsonText.slice(start, end + 1));
+        }
       } catch (error) {
         const status = Number(error?.status || error?.code);
         const retryable = status === 408 || status === 409 || status === 429 || status >= 500 || error?.name === 'APIConnectionTimeoutError';
