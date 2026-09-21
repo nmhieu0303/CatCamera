@@ -22,6 +22,10 @@ The browser SDK uses the configured `IMOU_REGION` to proxy its documented `getBu
 
 The **Chẩn đoán thiết bị** button calls the backend-only `listDeviceDetailsByIds` diagnostic for a configured camera slot. It returns only model, online status, capability strings, channel status, and the documented encryption mode; it never returns the serial number, device password, access token, kitToken, or vendor response. The official API describes `encryptMode=0` as device-default encryption and `encryptMode=1` as user-defined encryption. For this SDK version, an empty `code` follows the official demo's default path; do not force the serial number into the field when the camera has no configured password or custom key.
 
+## Pull request checks
+
+`.github/workflows/pr-review.yml` runs the TypeScript check, backend syntax check, Imou SDK asset checks, optional lint/tests, and the production build. It updates one status comment on same-repository pull requests. To receive the same result in Microsoft Teams, add an Actions secret named `TEAMS_WEBHOOK_URL`; the workflow skips the notification when the secret is not configured.
+
 ## Authentication and security
 Backend creates the **current documented** signature SHA256(secret) -> HMAC-SHA256 -> Base64 and calls `accessToken`, then `getKitToken` with permission type `1` (live-view only). It caches admin tokens and each kit token, returns only a short-lived kit token to the frontend, never AppSecret. The backend only serves two configured camera slots and binds to loopback. This sample has **no user auth**; never deploy publicly. KitToken is still a sensitive credential and must not be logged or stored. If making a public app, add HTTPS, user authentication and per-device authorization, CSRF/origin controls, token-rate limits and audit logs.
 
