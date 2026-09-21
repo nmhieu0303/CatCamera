@@ -3,6 +3,119 @@ import { reviewResponseSchema } from './schema.mjs';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+const geminiReviewSchema = {
+  type: 'object',
+  properties: {
+    summary: { type: 'string' },
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          file: { type: 'string' },
+          line: { type: 'integer' },
+          severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low'] },
+          category: { type: 'string', enum: ['correctness', 'react', 'typescript', 'async', 'security', 'performance', 'reliability'] },
+          title: { type: 'string' },
+          description: { type: 'string' },
+          evidence: { type: 'string' },
+          suggestion: { type: 'string' },
+          confidence: { type: 'number' },
+        },
+        required: ['file', 'line', 'severity', 'category', 'title', 'description', 'evidence', 'suggestion', 'confidence'],
+      },
+    },
+  },
+  required: ['summary', 'findings'],
+};
+
+function safeProviderError(error) {
+  const status = Number(error?.status || error?.code);
+  const message = String(error?.message || '')
+    .replace(/https?:\/\/\S+/gi, '[url]')
+    .replace(/(?:sk|rk|AIza|sk-or-v1)-[A-Za-z0-9_-]+/g, '[secret]')
+    .replace(/[\r\n]+/g, ' ')
+    .slice(0, 160);
+  const reason = String(error?.name || error?.code || 'request-error')
+    .replace(/[^A-Za-z0-9_.-]/g, '').slice(0, 80) || 'request-error';
+  return `${status || reason}${message ? `: ${message}` : ''}`;
+}
+
+function retryableProviderError(error) {
+  const status = Number(error?.status || error?.code);
+  return status === 408 || status === 409 || status === 429 || status >= 500 || error?.name === 'AbortError' || error?.name === 'APIConnectionTimeoutError';
+}
+
+function parseJsonResponse(outputText) {
+  if (!outputText) throw new Error('returned an empty response');
+  const jsonText = String(outputText).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  try {
+    return JSON.parse(jsonText);
+  } catch (parseError) {
+    const start = jsonText.indexOf('{');
+    const end = jsonText.lastIndexOf('}');
+    if (start < 0 || end <= start) throw parseError;
+    return JSON.parse(jsonText.slice(start, end + 1));
+  }
+}
+
+export class GeminiProvider {
+  constructor({ apiKey, model, baseURL = 'https://generativelanguage.googleapis.com/v1beta', timeoutMs = 90000, maxRetries = 2, fetchFn = fetch, sleepFn = sleep } = {}) {
+    if (!apiKey) throw new Error('GEMINI_API_KEY is not configured');
+    if (!model) throw new Error('GEMINI_MODEL is not configured');
+    this.apiKey = apiKey;
+    this.model = model;
+    this.baseURL = baseURL.replace(/\/$/, '');
+    this.timeoutMs = timeoutMs;
+    this.maxRetries = maxRetries;
+    this.fetch = fetchFn;
+    this.sleep = sleepFn;
+    this.provider = 'gemini';
+  }
+
+  async review({ system, user, maxOutputTokens = 3500 }) {
+    for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+        let response;
+        try {
+          response = await this.fetch(`${this.baseURL}/models/${encodeURIComponent(this.model)}:generateContent`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-goog-api-key': this.apiKey },
+            body: JSON.stringify({
+              system_instruction: { parts: [{ text: system }] },
+              contents: [{ role: 'user', parts: [{ text: user }] }],
+              generationConfig: {
+                responseMimeType: 'application/json',
+                responseSchema: geminiReviewSchema,
+                maxOutputTokens,
+              },
+            }),
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+        const payload = await response.json();
+        if (!response.ok) {
+          const error = new Error(payload?.error?.message || `HTTP ${response.status}`);
+          error.status = response.status;
+          throw error;
+        }
+        const outputText = payload.candidates?.[0]?.content?.parts?.map(part => part.text || '').join('');
+        return parseJsonResponse(outputText);
+      } catch (error) {
+        if (!retryableProviderError(error) || attempt >= this.maxRetries) {
+          throw new Error(`gemini review failed (${safeProviderError(error)})`);
+        }
+        await this.sleep(750 * (2 ** attempt));
+      }
+    }
+    throw new Error('gemini review failed');
+  }
+}
+
 export class OpenAIProvider {
   constructor({ apiKey, model, provider = 'openai', baseURL, defaultHeaders, timeoutMs = 90000, maxRetries = 2, client, sleepFn = sleep } = {}) {
     const keyName = provider === 'openrouter' ? 'OPENROUTER_API_KEY' : 'OPENAI_API_KEY';
@@ -102,7 +215,16 @@ export class OpenAIProvider {
 
 export function resolveProviderConfig(config = process.env) {
   const provider = config.AI_PROVIDER || 'openai';
-  if (!['openai', 'openrouter'].includes(provider)) throw new Error(`Unsupported AI_PROVIDER: ${provider}`);
+  if (!['openai', 'openrouter', 'gemini'].includes(provider)) throw new Error(`Unsupported AI_PROVIDER: ${provider}`);
+
+  if (provider === 'gemini') {
+    return {
+      provider,
+      apiKey: config.GEMINI_API_KEY,
+      model: config.GEMINI_MODEL || 'gemini-3.8-flash',
+      baseURL: config.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta',
+    };
+  }
 
   if (provider === 'openrouter') {
     return {
@@ -126,5 +248,8 @@ export function resolveProviderConfig(config = process.env) {
 }
 
 export function createProvider(config = process.env) {
-  return new OpenAIProvider(resolveProviderConfig(config));
+  const providerConfig = resolveProviderConfig(config);
+  return providerConfig.provider === 'gemini'
+    ? new GeminiProvider(providerConfig)
+    : new OpenAIProvider(providerConfig);
 }

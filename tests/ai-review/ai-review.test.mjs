@@ -4,7 +4,7 @@ import { parseUnifiedPatch, collectReviewableFiles, changedLinesMap } from '../.
 import { validateReview, findingFingerprint } from '../../scripts/ai-review/schema.mjs';
 import { buildSummaryBody, findingComment } from '../../scripts/ai-review/report.mjs';
 import { buildTeamsAdaptiveCard, sendTeamsWebhook } from '../../scripts/ai-review/teams.mjs';
-import { OpenAIProvider, resolveProviderConfig } from '../../scripts/ai-review/provider.mjs';
+import { GeminiProvider, OpenAIProvider, resolveProviderConfig } from '../../scripts/ai-review/provider.mjs';
 import { createGitHubClient } from '../../scripts/ai-review/github.mjs';
 import { isStalePullRequest, isTrustedPullRequest } from '../../scripts/ai-review/guards.mjs';
 
@@ -196,6 +196,26 @@ test('resolves OpenRouter configuration without exposing credentials', () => {
 
 test('rejects unsupported AI providers', () => {
   assert.throws(() => resolveProviderConfig({ AI_PROVIDER: 'unknown' }), /Unsupported AI_PROVIDER/);
+});
+
+test('resolves Gemini configuration without putting the key in the URL', async () => {
+  const config = resolveProviderConfig({ AI_PROVIDER: 'gemini', GEMINI_API_KEY: 'gem-key' });
+  assert.equal(config.provider, 'gemini');
+  assert.equal(config.model, 'gemini-3.8-flash');
+  let request;
+  const provider = new GeminiProvider({
+    ...config,
+    fetchFn: async (url, options) => {
+      request = { url, options };
+      return new Response(JSON.stringify({
+        candidates: [{ content: { parts: [{ text: JSON.stringify({ summary: 'gemini ok', findings: [] }) }] } }],
+      }), { status: 200 });
+    },
+  });
+  assert.deepEqual(await provider.review({ system: 'system', user: 'diff', maxOutputTokens: 12 }), { summary: 'gemini ok', findings: [] });
+  assert.match(request.url, /models\/gemini-3\.8-flash:generateContent$/);
+  assert.equal(request.options.headers['x-goog-api-key'], 'gem-key');
+  assert.equal(request.url.includes('gem-key'), false);
 });
 
 test('OpenAI provider retries a transient rate limit without logging prompts', async () => {

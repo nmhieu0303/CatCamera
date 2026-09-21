@@ -19,16 +19,17 @@ Only added right-side lines can receive inline comments. Findings are rejected w
 Add these values in the repository settings:
 
 1. Open **Settings → Secrets and variables → Actions**.
-2. For OpenRouter Free, add `OPENROUTER_API_KEY` as an Actions secret and `OPENROUTER_MODEL` as a repository variable. Use `openrouter/free` or a specific model marked `:free`; choose one that supports Structured Outputs. OpenRouter's free capacity and rate limits can change.
-3. Set the optional `AI_PROVIDER` repository variable to `openrouter` (the workflow defaults to it). `OPENROUTER_BASE_URL` is fixed to `https://openrouter.ai/api/v1` in the workflow.
-4. To use OpenAI API instead, set `AI_PROVIDER=openai`, add `OPENAI_API_KEY`, and add `OPENAI_MODEL`.
-5. Add `TEAMS_WEBHOOK_URL` as an Actions secret for the Teams Workflows webhook.
+2. For Gemini API, add `GEMINI_API_KEY` as an Actions secret and set `GEMINI_MODEL` as a repository variable. The default is the current stable `gemini-3.8-flash`; use a model available to the API project and its quota.
+3. Set `AI_PROVIDER=gemini` as a repository variable. The workflow defaults to Gemini when it is absent. `GEMINI_BASE_URL` is fixed to `https://generativelanguage.googleapis.com/v1beta` in the workflow.
+4. OpenRouter remains available by setting `AI_PROVIDER=openrouter`, `OPENROUTER_API_KEY`, and `OPENROUTER_MODEL`.
+5. To use OpenAI API instead, set `AI_PROVIDER=openai`, add `OPENAI_API_KEY`, and add `OPENAI_MODEL`.
+6. Add `TEAMS_WEBHOOK_URL` as an Actions secret for the Teams Workflows webhook.
 
 Never put any of these values in source, `.env.example`, PR text, comments, or logs. The OpenAI SDK request uses `store: false`, a bounded output size, a timeout, and retries only for transient failures and rate limits. OpenRouter is an external routing service, so review its provider and privacy settings before sending proprietary code.
 
 ## Review and reporting behavior
 
-The provider abstraction supports OpenAI and OpenRouter without changing GitHub publishing. OpenAI uses Responses Structured Outputs; OpenRouter Free uses Chat Completions `json_object` mode because free-router model support for strict JSON Schema varies. The prompt carries the schema and the validator enforces it, sanitizes text, validates severity/category, requires a real changed file and added line, deduplicates findings, and caps inline comments.
+The provider abstraction supports Gemini, OpenAI, and OpenRouter without changing GitHub publishing. Gemini and OpenAI use structured JSON output; OpenRouter Free uses Chat Completions `json_object` mode because free-router model support for strict JSON Schema varies. The prompt carries the schema and the validator enforces it, sanitizes text, validates severity/category, requires a real changed file and added line, deduplicates findings, and caps inline comments.
 
 The reviewer publishes only `COMMENT` reviews. It never approves, requests changes, merges, resolves human threads, or blocks a pull request because of an AI finding. A stable fingerprint prevents duplicate inline comments on reruns. Before publishing, it re-fetches the PR and abandons findings if the head SHA changed.
 
