@@ -44,6 +44,7 @@ jobs:
         id: scripts
         shell: bash
         run: |
+          # Keep absent optional checks visible as skipped in the PR report.
           node <<'NODE' >> "$GITHUB_OUTPUT"
           const scripts = require('./package.json').scripts || {};
           console.log(`lint=${Boolean(scripts.lint)}`);
