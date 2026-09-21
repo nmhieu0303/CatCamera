@@ -1,0 +1,209 @@
+name: PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  quality-check:
+    name: Source checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    outputs:
+      lint: ${{ steps.lint.outcome }}
+      types: ${{ steps.types.outcome }}
+      backend: ${{ steps.backend.outcome }}
+      assets: ${{ steps.assets.outcome }}
+      tests: ${{ steps.tests.outcome }}
+      build: ${{ steps.build.outcome }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # These checks are optional because the current package has no lint/test scripts.
+      - name: ESLint (if configured)
+        id: lint
+        continue-on-error: true
+        run: npm run lint --if-present
+
+      - name: TypeScript type check
+        id: types
+        if: always()
+        continue-on-error: true
+        run: npx tsc -b --pretty false
+
+      - name: Backend syntax check
+        id: backend
+        if: always()
+        continue-on-error: true
+        run: node --check server/index.js
+
+      - name: Verify Imou SDK assets
+        id: assets
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s public/imou-sdk/imou-player.js
+          test -s public/imou-sdk/imou-player.css
+          test -s public/imou-sdk/WasmLib/MultiThread/liblcplay.js
+          test -s public/imou-sdk/WasmLib/MultiThread/liblcplay.worker.js
+          test -s public/imou-sdk/WasmLib/MultiThread/liblcplay.wasm
+
+      - name: Tests (if configured)
+        id: tests
+        if: always()
+        continue-on-error: true
+        run: npm test --if-present
+
+      - name: Frontend and backend build
+        id: build
+        if: always()
+        continue-on-error: true
+        run: npm run build
+
+      - name: Fail if a configured check failed
+        if: always()
+        env:
+          LINT: ${{ steps.lint.outcome }}
+          TYPES: ${{ steps.types.outcome }}
+          BACKEND: ${{ steps.backend.outcome }}
+          ASSETS: ${{ steps.assets.outcome }}
+          TESTS: ${{ steps.tests.outcome }}
+          BUILD: ${{ steps.build.outcome }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+          for result in "$LINT" "$TYPES" "$TESTS" "$BUILD"; do
+            if [[ "$result" != "success" ]]; then
+              failed=1
+            fi
+          done
+          for result in "$BACKEND" "$ASSETS"; do
+            if [[ "$result" != "success" ]]; then
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+  report:
+    name: PR review report
+    needs: quality-check
+
+    if: >-
+      always() &&
+      github.event.pull_request.head.repo.full_name == github.repository
+
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Upsert PR check comment
+        uses: actions/github-script@v7
+        env:
+          CHECK_RESULT: ${{ needs.quality-check.result }}
+          LINT: ${{ needs.quality-check.outputs.lint }}
+          TYPES: ${{ needs.quality-check.outputs.types }}
+          BACKEND: ${{ needs.quality-check.outputs.backend }}
+          ASSETS: ${{ needs.quality-check.outputs.assets }}
+          TESTS: ${{ needs.quality-check.outputs.tests }}
+          BUILD: ${{ needs.quality-check.outputs.build }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const marker = '<!-- catcamera-pr-review -->';
+            const checks = {
+              'ESLint (optional)': process.env.LINT,
+              TypeScript: process.env.TYPES,
+              'Backend syntax': process.env.BACKEND,
+              'SDK assets': process.env.ASSETS,
+              'Tests (optional)': process.env.TESTS,
+              Build: process.env.BUILD,
+            };
+
+            const resultLabel = (result) => {
+              if (result === 'success') return '✅ passed';
+              if (result === 'skipped') return '➖ skipped';
+              return `❌ ${result || 'not run'}`;
+            };
+
+            const body = [
+              marker,
+              '## CatCamera PR checks',
+              '',
+              `**Overall:** ${process.env.CHECK_RESULT === 'success' ? '✅ passed' : '❌ failed'}`,
+              '',
+              ...Object.entries(checks).map(([name, result]) => `- **${name}:** ${resultLabel(result)}`),
+              '',
+              `[View workflow run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`,
+            ].join('\n');
+
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const existing = comments.find((comment) => comment.body?.includes(marker));
+            const payload = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            };
+
+            if (existing) {
+              await github.rest.issues.updateComment({ ...payload, comment_id: existing.id });
+            } else {
+              await github.rest.issues.createComment({ ...payload, issue_number: context.issue.number });
+            }
+
+      - name: Notify Microsoft Teams (optional)
+        if: always()
+        env:
+          WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          CHECK_RESULT: ${{ needs.quality-check.result }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$WEBHOOK_URL" ]]; then
+            echo "TEAMS_WEBHOOK_URL is not configured; skipping notification."
+            exit 0
+          fi
+
+          jq -n \
+            --arg text "CatCamera PR #${PR_NUMBER} | ${CHECK_RESULT} | ${PR_URL}" \
+            '{text: $text}' > /tmp/teams.json
+
+          curl --fail-with-body --retry 3 \
+            -X POST \
+            -H 'Content-Type: application/json' \
+            --data-binary @/tmp/teams.json \
+            "$WEBHOOK_URL"
