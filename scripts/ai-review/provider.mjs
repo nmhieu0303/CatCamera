@@ -26,25 +26,47 @@ export class OpenAIProvider {
   async review({ system, user, maxOutputTokens = 3500 }) {
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
       try {
-        const response = await this.client.responses.create({
-          model: this.model,
-          input: [
-            { role: 'system', content: [{ type: 'input_text', text: system }] },
-            { role: 'user', content: [{ type: 'input_text', text: user }] },
-          ],
-          max_output_tokens: maxOutputTokens,
-          store: false,
-          text: {
-            format: {
+        let outputText;
+        if (this.provider === 'openrouter') {
+          const response = await this.client.chat.completions.create({
+            model: this.model,
+            messages: [
+              { role: 'system', content: system },
+              { role: 'user', content: user },
+            ],
+            max_tokens: maxOutputTokens,
+            response_format: {
               type: 'json_schema',
-              name: 'code_review',
-              strict: true,
-              schema: reviewResponseSchema,
+              json_schema: {
+                name: 'code_review',
+                strict: true,
+                schema: reviewResponseSchema,
+              },
             },
-          },
-        });
-        if (!response.output_text) throw new Error(`${this.provider} returned an empty response`);
-        return JSON.parse(response.output_text);
+          });
+          outputText = response.choices?.[0]?.message?.content;
+        } else {
+          const response = await this.client.responses.create({
+            model: this.model,
+            input: [
+              { role: 'system', content: [{ type: 'input_text', text: system }] },
+              { role: 'user', content: [{ type: 'input_text', text: user }] },
+            ],
+            max_output_tokens: maxOutputTokens,
+            store: false,
+            text: {
+              format: {
+                type: 'json_schema',
+                name: 'code_review',
+                strict: true,
+                schema: reviewResponseSchema,
+              },
+            },
+          });
+          outputText = response.output_text;
+        }
+        if (!outputText) throw new Error(`${this.provider} returned an empty response`);
+        return JSON.parse(outputText);
       } catch (error) {
         const status = Number(error?.status || error?.code);
         const retryable = status === 408 || status === 409 || status === 429 || status >= 500 || error?.name === 'APIConnectionTimeoutError';
