@@ -222,8 +222,7 @@ test('OpenRouter provider uses chat structured outputs', async () => {
   assert.deepEqual(result, { summary: 'router ok', findings: [] });
   assert.equal(request.model, 'openrouter/free');
   assert.equal(request.max_tokens, 12);
-  assert.equal(request.response_format.type, 'json_schema');
-  assert.equal(request.response_format.json_schema.strict, true);
+  assert.deepEqual(request.response_format, { type: 'json_object' });
 });
 
 test('GitHub client retries transient API errors', async () => {
