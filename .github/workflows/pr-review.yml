@@ -40,11 +40,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # These checks are optional because the current package has no lint/test scripts.
+      - name: Detect optional scripts
+        id: scripts
+        shell: bash
+        run: |
+          # Keep absent optional checks visible as skipped in the PR report.
+          node <<'NODE' >> "$GITHUB_OUTPUT"
+          const scripts = require('./package.json').scripts || {};
+          console.log(`lint=${Boolean(scripts.lint)}`);
+          console.log(`test=${Boolean(scripts.test)}`);
+          NODE
+
       - name: ESLint (if configured)
         id: lint
+        if: steps.scripts.outputs.lint == 'true'
         continue-on-error: true
-        run: npm run lint --if-present
+        run: npm run lint
 
       - name: TypeScript type check
         id: types
@@ -73,9 +84,9 @@ jobs:
 
       - name: Tests (if configured)
         id: tests
-        if: always()
+        if: always() && steps.scripts.outputs.test == 'true'
         continue-on-error: true
-        run: npm test --if-present
+        run: npm test
 
       - name: Frontend and backend build
         id: build
@@ -96,16 +107,13 @@ jobs:
         run: |
           set -euo pipefail
           failed=0
-          for result in "$LINT" "$TYPES" "$TESTS" "$BUILD"; do
+          for result in "$TYPES" "$BACKEND" "$ASSETS" "$BUILD"; do
             if [[ "$result" != "success" ]]; then
               failed=1
             fi
           done
-          for result in "$BACKEND" "$ASSETS"; do
-            if [[ "$result" != "success" ]]; then
-              failed=1
-            fi
-          done
+          [[ "$LINT" == "success" || "$LINT" == "skipped" ]] || failed=1
+          [[ "$TESTS" == "success" || "$TESTS" == "skipped" ]] || failed=1
           exit "$failed"
 
   report:
@@ -182,38 +190,3 @@ jobs:
             } else {
               await github.rest.issues.createComment({ ...payload, issue_number: context.issue.number });
             }
-
-      - name: Notify Microsoft Teams (optional)
-        if: always()
-        env:
-          WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          CHECK_RESULT: ${{ needs.quality-check.result }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ -z "$WEBHOOK_URL" ]]; then
-            echo "TEAMS_WEBHOOK_URL is not configured; skipping notification."
-            exit 0
-          fi
-
-          MESSAGE="CatCamera PR #${PR_NUMBER} | ${CHECK_RESULT} | ${PR_URL}"
-          jq -n \
-            --arg title "CatCamera PR #${PR_NUMBER}" \
-            --arg text "$MESSAGE" \
-            '{
-              "@type": "MessageCard",
-              "@context": "http://schema.org/extensions",
-              "summary": $title,
-              "title": $title,
-              "text": $text,
-              "themeColor": "2F80ED"
-            }' > /tmp/teams.json
-
-          curl --silent --show-error --fail-with-body --retry 3 \
-            --write-out '\nTeams webhook HTTP %{http_code}\n' \
-            -X POST \
-            -H 'Content-Type: application/json' \
-            --data-binary @/tmp/teams.json \
-            "$WEBHOOK_URL"
