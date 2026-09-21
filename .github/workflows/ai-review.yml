@@ -52,7 +52,10 @@ jobs:
       - name: Run advisory AI review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          AI_PROVIDER: ${{ vars.AI_PROVIDER || 'openrouter' }}
+          AI_PROVIDER: ${{ vars.AI_PROVIDER || 'gemini' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL || 'gemini-3.8-flash' }}
+          GEMINI_BASE_URL: https://generativelanguage.googleapis.com/v1beta
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL || secrets.OPENROUTER_MODEL }}
           OPENROUTER_BASE_URL: https://openrouter.ai/api/v1
