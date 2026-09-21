@@ -198,11 +198,21 @@ jobs:
             exit 0
           fi
 
+          MESSAGE="CatCamera PR #${PR_NUMBER} | ${CHECK_RESULT} | ${PR_URL}"
           jq -n \
-            --arg text "CatCamera PR #${PR_NUMBER} | ${CHECK_RESULT} | ${PR_URL}" \
-            '{text: $text}' > /tmp/teams.json
+            --arg title "CatCamera PR #${PR_NUMBER}" \
+            --arg text "$MESSAGE" \
+            '{
+              "@type": "MessageCard",
+              "@context": "http://schema.org/extensions",
+              "summary": $title,
+              "title": $title,
+              "text": $text,
+              "themeColor": "2F80ED"
+            }' > /tmp/teams.json
 
-          curl --fail-with-body --retry 3 \
+          curl --silent --show-error --fail-with-body --retry 3 \
+            --write-out '\nTeams webhook HTTP %{http_code}\n' \
             -X POST \
             -H 'Content-Type: application/json' \
             --data-binary @/tmp/teams.json \
